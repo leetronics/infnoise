@@ -1,5 +1,6 @@
 // This writes entropy to the Linux /dev/random pool using ioctl, so that entropy increases.
 
+#include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -57,6 +58,19 @@ void inmWriteEntropyStart(uint32_t bufLen, bool debug) {
 
 void inmWriteEntropyEnd() {
     free( inmPoolInfo );
+}
+
+// recent Linux kernels seldomly reseed from the input pool (60s),
+// this call can be used to force faster reseeds
+void inmForceKernelRngReseed() {
+#ifdef RNDRESEEDCRNG
+    // printf("force CRNG reseed\n");
+    if(ioctl(pfd.fd, RNDRESEEDCRNG) < 0 && errno != EINVAL) {
+        fprintf(stderr, "RNDRESEEDCRNG on /dev/random failed.\n");
+    }
+#else
+    fprintf(stderr, "/dev/random does not support RNDRESEEDCRNG\n");
+#endif
 }
 
 // Block until either the entropy pool has room, or 1 minute has passed.
