@@ -21,9 +21,8 @@ jobs:
       - name: Build deb packages
         working-directory: software
         run: |
-          ./build-scripts/build.sh amd64
-          ./build-scripts/build-dkms.sh deb
-
+          bash ./build-scripts/build.sh amd64
+          bash ./build-scripts/build-dkms.sh deb
       - name: Upload deb packages
         uses: actions/upload-artifact@v4
         with:
@@ -44,9 +43,9 @@ jobs:
       - name: Build rpm packages
         working-directory: software
         run: |
-          ./build-scripts/build-rpm.sh
-          ./build-scripts/build-dkms.sh rpm
-
+          bash ./build-scripts/build-rpm.sh
+          bash ./build-scripts/build-dkms.sh rpm
+          
       - name: Upload rpm packages
         uses: actions/upload-artifact@v4
         with:
@@ -72,8 +71,8 @@ jobs:
 
       - name: Build arch packages
         run: |
-          su builder -c "cd \"$GITHUB_WORKSPACE/software\" && ./build-scripts/build-archlinux.sh --notsigned"
-          su builder -c "cd \"$GITHUB_WORKSPACE/software\" && ./build-scripts/build-dkms.sh arch"
+          su builder -c "cd \"$GITHUB_WORKSPACE/software\" && bash ./build-scripts/build-archlinux.sh --notsigned"
+          su builder -c "cd \"$GITHUB_WORKSPACE/software\" && bash ./build-scripts/build-dkms.sh arch"
 
       - name: Upload arch packages
         uses: actions/upload-artifact@v4
