@@ -1,0 +1,103 @@
+name: Build Packages
+
+on:
+  push:
+    branches: [main, master]
+    tags: ['v*']
+  pull_request:
+    branches: [main, master]
+
+jobs:
+  build-deb:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install dependencies
+        run: sudo apt-get update && sudo apt-get install -y build-essential fakeroot libftdi1-dev git
+
+      - name: Build deb packages
+        working-directory: software
+        run: |
+          bash ./build-scripts/build.sh amd64
+          bash ./build-scripts/build-dkms.sh deb
+
+      - name: Upload deb packages
+        uses: actions/upload-artifact@v4
+        with:
+          name: deb-packages
+          path: software/*.deb
+
+  build-rpm:
+    runs-on: ubuntu-latest
+    container: fedora:latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install dependencies
+        run: dnf install -y rpm-build make gcc libftdi-devel git
+
+      - name: Build rpm packages
+        working-directory: software
+        run: |
+          bash ./build-scripts/build-rpm.sh
+          bash ./build-scripts/build-dkms.sh rpm
+
+      - name: Upload rpm packages
+        uses: actions/upload-artifact@v4
+        with:
+          name: rpm-packages
+          path: software/RPMS/**/*.rpm
+
+  build-arch:
+    runs-on: ubuntu-latest
+    container: archlinux:latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install dependencies
+        run: pacman -Syu --noconfirm base-devel libftdi git sudo
+
+      - name: Set up builder user
+        run: |
+          useradd -m builder
+          echo "builder ALL=(ALL) NOPASSWD: ALL" >> /etc/sudoers
+          chown -R builder:builder "$GITHUB_WORKSPACE"
+
+      - name: Build arch packages
+        run: |
+          su builder -c "cd \"$GITHUB_WORKSPACE/software\" && bash ./build-scripts/build-archlinux.sh --notsigned"
+          su builder -c "cd \"$GITHUB_WORKSPACE/software\" && bash ./build-scripts/build-dkms.sh arch"
+
+      - name: Upload arch packages
+        uses: actions/upload-artifact@v4
+        with:
+          name: arch-packages
+          path: |
+            software/x86_64/*.pkg.tar.*
+            software/x86_64-dkms/*.pkg.tar.*
+
+  release:
+    needs: [build-deb, build-rpm, build-arch]
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v')
+    permissions:
+      contents: write
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/**/*
+          generate_release_notes: true
