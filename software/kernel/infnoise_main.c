@@ -922,7 +922,8 @@ static int infnoise_probe(struct usb_interface *intf,
 	struct infnoise_device *dev;
 	int ret;
 
-	dev_info(&intf->dev, "Infinite Noise TRNG detected\n");
+	dev_info(&intf->dev, "Infinite Noise TRNG detected (serial: %s)\n",
+		 udev->serial ? udev->serial : "(none)");
 
 	/* Reset USB device to clear any stale state */
 	ret = usb_reset_device(udev);
