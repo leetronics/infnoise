@@ -653,6 +653,32 @@ static void infnoise_warmup_work(struct work_struct *work)
 
 /* ============== hwrng interface ============== */
 
+/*
+ * Drive recovery if HEALTH_FAIL is latched.
+ *
+ * HEALTH_FAIL is set by the extract path on a stuck-at-N detection, which
+ * can be a false positive on a long but legitimate run of identical bits.
+ * The flag would otherwise dead-end the read paths forever, because they
+ * gate on it before ever reaching the transfer/recovery machinery. Calling
+ * infnoise_try_recovery here resets health state and lets the device
+ * self-heal. Returns 0 if the device is usable, negative errno otherwise.
+ */
+static int infnoise_recover_if_health_failed(struct infnoise_device *dev)
+{
+	int ret = 0;
+
+	if (!test_bit(INFNOISE_HEALTH_FAIL, &dev->flags))
+		return 0;
+
+	mutex_lock(&dev->lock);
+	/* Re-check under lock; another caller may have just recovered. */
+	if (test_bit(INFNOISE_HEALTH_FAIL, &dev->flags))
+		ret = infnoise_try_recovery(dev);
+	mutex_unlock(&dev->lock);
+
+	return ret;
+}
+
 static int infnoise_hwrng_read(struct hwrng *rng, void *data, size_t max,
 			       bool wait)
 {
@@ -679,8 +705,9 @@ static int infnoise_hwrng_read(struct hwrng *rng, void *data, size_t max,
 	if (!test_bit(INFNOISE_WARMUP_DONE, &dev->flags))
 		return 0;
 
-	if (test_bit(INFNOISE_HEALTH_FAIL, &dev->flags))
-		return -EIO;
+	ret = infnoise_recover_if_health_failed(dev);
+	if (ret < 0)
+		return ret;
 
 	mutex_lock(&dev->lock);
 	ret = infnoise_read_data(dev, data, max, raw);
@@ -789,8 +816,9 @@ static ssize_t infnoise_char_read(struct file *file, char __user *buf,
 			return ret;
 	}
 
-	if (test_bit(INFNOISE_HEALTH_FAIL, &dev->flags))
-		return -EIO;
+	ret = infnoise_recover_if_health_failed(dev);
+	if (ret < 0)
+		return ret;
 
 	while (total < count) {
 		chunk = min(count - total, sizeof(data));
