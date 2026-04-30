@@ -17,6 +17,7 @@
 #include <linux/mutex.h>
 #include <linux/completion.h>
 #include <linux/workqueue.h>
+#include <linux/kref.h>
 
 /* USB device IDs - Infinite Noise TRNG (pid.codes registered) */
 #define INFNOISE_VENDOR_ID	0x1209	/* pid.codes VID */
@@ -203,6 +204,8 @@ enum infnoise_flags {
 
 /* Main device structure */
 struct infnoise_device {
+	struct kref kref;		/* Lifetime reference count */
+
 	struct usb_device *udev;
 	struct usb_interface *intf;
 

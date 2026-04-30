@@ -111,6 +111,9 @@ void infnoise_health_reset(struct infnoise_health *health)
 	health->total_zeros = 0;
 	health->even_misfires = 0;
 	health->odd_misfires = 0;
+	health->seq_zeros = 0;
+	health->seq_ones = 0;
+	health->ok_to_use = false;
 }
 
 /*
