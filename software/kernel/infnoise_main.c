@@ -213,28 +213,31 @@ static int infnoise_try_recovery(struct infnoise_device *dev)
 	/* Small delay to let things settle */
 	msleep(INFNOISE_RETRY_DELAY_MS);
 
-	/* Try to reconfigure the FTDI device */
+	/*
+	 * Try to reconfigure the FTDI device. We deliberately do NOT fall
+	 * back to usb_reset_device() here, even though the previous
+	 * "last resort" reset would sometimes recover wedged FTDI state:
+	 *
+	 *   recovery is invoked from infnoise_hwrng_read() / infnoise_char_read(),
+	 *   which the hwrng core calls with its reading_mutex held. usb_reset_device()
+	 *   forces an unbind of this interface, which runs infnoise_disconnect()
+	 *   synchronously in the same task. disconnect() then calls
+	 *   hwrng_unregister(), which waits for the hwrng cleanup completion —
+	 *   a completion that fires only after the in-flight ->read() returns.
+	 *   That in-flight read *is this task*. Self-deadlock; observed as
+	 *   usb_hub_wq blocked on device_del waiting on the dd reader.
+	 *
+	 * If FTDI reconfigure can't bring the device back, the device is
+	 * wedged badly enough that only a physical replug (or autosuspend
+	 * cycle) will help; the read path returns -EIO and the user can
+	 * decide.
+	 */
 	ret = infnoise_configure_ftdi(dev);
 	if (ret < 0) {
-		dev_warn(&dev->intf->dev,
-			 "FTDI reconfiguration failed (%d), trying USB reset\n", ret);
-
-		/* Last resort: reset the USB device */
-		ret = usb_reset_device(dev->udev);
-		if (ret < 0) {
-			dev_err(&dev->intf->dev,
-				"USB reset failed: %d, device may be unusable\n", ret);
-			return ret;
-		}
-
-		/* Reconfigure after reset */
-		msleep(50);
-		ret = infnoise_configure_ftdi(dev);
-		if (ret < 0) {
-			dev_err(&dev->intf->dev,
-				"FTDI configuration after reset failed: %d\n", ret);
-			return ret;
-		}
+		dev_err(&dev->intf->dev,
+			"FTDI reconfiguration failed (%d); replug to recover\n",
+			ret);
+		return ret;
 	}
 
 	/*
