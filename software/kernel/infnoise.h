@@ -259,7 +259,7 @@ void infnoise_keccak_init(struct infnoise_keccak *keccak);
 void infnoise_keccak_absorb(struct infnoise_keccak *keccak, const u8 *data,
 			    unsigned int lanes);
 void infnoise_keccak_extract(struct infnoise_keccak *keccak, u8 *data,
-			     unsigned int lanes);
+			     size_t bytes);
 void infnoise_keccak_permutation(struct infnoise_keccak *keccak);
 
 /* Health check functions (infnoise_health.c) */

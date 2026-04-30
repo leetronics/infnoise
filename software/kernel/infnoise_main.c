@@ -517,7 +517,7 @@ static int infnoise_keccak_squeeze(struct infnoise_device *dev, u8 *result,
 
 	/* Extract at most 128 bytes (16 lanes) for security margin */
 	out_bytes = min_t(size_t, max_len, 128);
-	infnoise_keccak_extract(&dev->keccak, result, (out_bytes + 7) / 8);
+	infnoise_keccak_extract(&dev->keccak, result, out_bytes);
 
 	/* Permute state for next extraction */
 	infnoise_keccak_permutation(&dev->keccak);
