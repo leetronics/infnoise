@@ -17,6 +17,7 @@
 #include <linux/mutex.h>
 #include <linux/completion.h>
 #include <linux/workqueue.h>
+#include <linux/kref.h>
 
 /* USB device IDs - Infinite Noise TRNG (pid.codes registered) */
 #define INFNOISE_VENDOR_ID	0x1209	/* pid.codes VID */
@@ -87,7 +88,13 @@
 #define INM_TABLE_SIZE		(1 << INM_PREDICTION_BITS)	/* 16384 entries */
 #define INM_MIN_DATA		80000	/* Minimum bits before data is valid */
 #define INM_MIN_SAMPLE_SIZE	100	/* Minimum samples */
-#define INM_MAX_SEQUENCE	20	/* Max consecutive same bits */
+/*
+ * Max consecutive same-valued bits before declaring a stuck-at fault.
+ * Sized per NIST SP 800-90B repetition-count test: C >= 1 + ceil(-log2(α)/H),
+ * with α = 2^-30 (false-positive rate) and H = 0.88 bits/bit ⇒ C ≈ 36.
+ * 40 leaves margin for the empirical entropy varying slightly below target.
+ */
+#define INM_MAX_SEQUENCE	40
 #define INM_MAX_COUNT		(1 << 14)	/* Max counter value before scaling */
 
 /*
@@ -203,12 +210,15 @@ enum infnoise_flags {
 
 /* Main device structure */
 struct infnoise_device {
+	struct kref kref;		/* Lifetime reference count */
+
 	struct usb_device *udev;
 	struct usb_interface *intf;
 
 	/* USB endpoints */
 	u8 bulk_in_ep;
 	u8 bulk_out_ep;
+	unsigned int bulk_in_mps;	/* bulk-IN wMaxPacketSize */
 
 	/* Buffers */
 	u8 *clock_buf;		/* Clock pattern buffer (512 bytes) */
@@ -250,7 +260,7 @@ void infnoise_keccak_init(struct infnoise_keccak *keccak);
 void infnoise_keccak_absorb(struct infnoise_keccak *keccak, const u8 *data,
 			    unsigned int lanes);
 void infnoise_keccak_extract(struct infnoise_keccak *keccak, u8 *data,
-			     unsigned int lanes);
+			     size_t bytes);
 void infnoise_keccak_permutation(struct infnoise_keccak *keccak);
 
 /* Health check functions (infnoise_health.c) */

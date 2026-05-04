@@ -15,6 +15,12 @@
 #include <linux/types.h>
 #include <linux/string.h>
 #include <asm/byteorder.h>
+#include <linux/version.h>
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 12, 0)
+#include <asm/unaligned.h>
+#else
+#include <linux/unaligned.h>
+#endif
 #include "infnoise.h"
 
 /* Pre-computed round constants for Keccak-1600 */
@@ -136,47 +142,32 @@ static void keccak_permutation_on_words(u64 *state)
 	}
 }
 
-/* Convert bytes to words (for big-endian systems) */
-#if defined(__BIG_ENDIAN)
-static void keccak_bytes_to_words(u64 *words, const u8 *bytes)
-{
-	unsigned int i, j;
-
-	for (i = 0; i < KECCAK_LANES; i++) {
-		words[i] = 0;
-		for (j = 0; j < 8; j++)
-			words[i] |= (u64)bytes[i * 8 + j] << (8 * j);
-	}
-}
-
-static void keccak_words_to_bytes(u8 *bytes, const u64 *words)
-{
-	unsigned int i, j;
-
-	for (i = 0; i < KECCAK_LANES; i++)
-		for (j = 0; j < 8; j++)
-			bytes[i * 8 + j] = (words[i] >> (8 * j)) & 0xFF;
-}
-#endif
-
 /**
  * infnoise_keccak_permutation - Apply Keccak-f[1600] permutation
  * @keccak: Keccak state structure
  *
  * Applies the full 24-round Keccak-f[1600] permutation to the state.
+ *
+ * The state is held as a u8 array, so we cannot cast it to (u64 *) and
+ * permute in place: that would violate strict aliasing and require
+ * 8-byte alignment which kzalloc() does not guarantee on all
+ * architectures (ARCH_KMALLOC_MINALIGN may be 4 on some 32-bit ports).
+ * Always go through a properly-aligned local u64 array using the
+ * little-endian unaligned accessors, which compile to plain loads on
+ * LE hosts and to byteswapping loads on BE hosts.
  */
 void infnoise_keccak_permutation(struct infnoise_keccak *keccak)
 {
-#if defined(__BIG_ENDIAN)
-	u64 state_words[KECCAK_LANES];
+	u64 words[KECCAK_LANES];
+	unsigned int i;
 
-	keccak_bytes_to_words(state_words, keccak->state);
-	keccak_permutation_on_words(state_words);
-	keccak_words_to_bytes(keccak->state, state_words);
-#else
-	/* On little-endian, we can work directly on the byte array */
-	keccak_permutation_on_words((u64 *)keccak->state);
-#endif
+	for (i = 0; i < KECCAK_LANES; i++)
+		words[i] = get_unaligned_le64(&keccak->state[i * 8]);
+
+	keccak_permutation_on_words(words);
+
+	for (i = 0; i < KECCAK_LANES; i++)
+		put_unaligned_le64(words[i], &keccak->state[i * 8]);
 }
 
 /**
@@ -217,17 +208,15 @@ void infnoise_keccak_absorb(struct infnoise_keccak *keccak, const u8 *data,
  * infnoise_keccak_extract - Extract data from Keccak sponge
  * @keccak: Keccak state structure
  * @data: Buffer to store extracted data
- * @lanes: Number of 64-bit lanes to extract (bytes / 8)
+ * @bytes: Number of bytes to extract
  *
  * Copies bytes from the state. Does NOT apply permutation;
  * caller should call keccak_permutation() between extracts
  * if extracting more data than the rate allows.
  */
 void infnoise_keccak_extract(struct infnoise_keccak *keccak, u8 *data,
-			     unsigned int lanes)
+			     size_t bytes)
 {
-	unsigned int bytes = lanes * 8;
-
 	if (bytes > KECCAK_STATE_SIZE)
 		bytes = KECCAK_STATE_SIZE;
 

@@ -86,7 +86,7 @@ sudo modprobe -r ftdi_sio
 sudo ftdi_eeprom --read-eeprom --device i:0x0403:0x6015 backup.eeprom
 
 # Flash new configuration
-sudo ftdi_eeprom --flash-eeprom infnoise-eeprom.conf
+sudo ftdi_eeprom --flash-eeprom --device i:0x0403:0x6015 infnoise-eeprom.conf
 
 # Unplug and replug the device
 ```
